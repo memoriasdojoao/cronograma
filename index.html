@@ -27,7 +27,7 @@
     --shadow: 0 1px 2px rgba(35,40,31,0.06), 0 6px 16px rgba(35,40,31,0.06);
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+  html,body{margin:0;padding:0;height:100%;overscroll-behavior:none;}
   body{
     background:var(--paper);
     background-image:
@@ -36,12 +36,18 @@
     color:var(--ink);
     font-family:'IBM Plex Sans', sans-serif;
     -webkit-font-smoothing:antialiased;
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+    height:100dvh;
+    overflow:hidden;
   }
   h1,h2,h3, .mono{ font-family:'IBM Plex Mono', monospace; }
 
   /* ---------- HEADER ---------- */
   header.top{
     padding: 28px clamp(16px,4vw,48px) 0;
+    flex: 0 0 auto;
   }
   .top-row{
     display:flex;
@@ -116,16 +122,27 @@
   /* ---------- LAYOUT ---------- */
   main.layout{
     display:flex;
-    align-items:flex-start;
+    align-items:stretch;
     gap:24px;
-    padding: 20px clamp(16px,4vw,48px) 60px;
+    padding: 20px clamp(16px,4vw,48px) 0;
+    flex: 1 1 auto;
+    min-height:0;
   }
-  #calendar-area{ flex:1 1 auto; min-width:0; }
+  /* Cada columna tiene su propio scroll: bajar los días no mueve las materias y viceversa. */
+  #calendar-area{
+    flex:1 1 auto;
+    min-width:0;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:40px;
+  }
   #sidebar{
     width:300px;
     flex:0 0 300px;
-    position:sticky;
-    top:20px;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:20px;
+    padding-right:2px;
   }
 
   /* ---------- CALENDAR ---------- */
@@ -243,18 +260,51 @@
     border:1px solid var(--line);
     border-left:4px solid var(--tag,#999);
     border-radius:6px;
-    padding:6px 8px;
+    padding:8px 8px 8px 10px;
+    min-height:38px;
     font-size:12.5px;
     display:flex;
     align-items:center;
     justify-content:space-between;
     gap:6px;
     cursor:grab;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
   }
   .topic-chip.dragging{ opacity:.35; }
-  .topic-chip span{ line-height:1.25; }
-  .topic-chip button{ background:none; border:none; color:#b7bcae; font-size:13px; flex-shrink:0;}
+  .topic-chip span{ line-height:1.3; }
+  .topic-chip .grab-handle{
+    color:#c3c7ba;
+    font-size:14px;
+    letter-spacing:1px;
+    flex-shrink:0;
+    padding-right:2px;
+  }
+  .topic-chip button{ background:none; border:none; color:#b7bcae; font-size:16px; flex-shrink:0; padding:4px 2px;}
   .topic-chip button:hover{ color:var(--rust); }
+
+  /* ---------- DRAG FANTASMA (mouse + touch) ---------- */
+  .drag-ghost{
+    position:fixed;
+    left:0; top:0;
+    z-index:10000;
+    pointer-events:none;
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:8px 10px;
+    font-size:12.5px;
+    font-weight:600;
+    box-shadow:0 8px 22px rgba(35,40,31,0.22);
+    max-width:220px;
+    opacity:.96;
+    transform:translate(-50%,-50%) scale(1.03);
+  }
+  @media (max-width: 1024px){
+    .topic-chip{ padding:10px 10px 10px 12px; min-height:44px; font-size:13.5px; }
+    .day-drop{ min-height:110px; }
+  }
   .add-row{ display:flex; gap:6px; margin-top:2px; }
   .add-row input{
     flex:1; font-family:inherit; font-size:12.5px; border:1px solid var(--line); border-radius:6px; padding:6px 8px;
@@ -281,7 +331,8 @@
     text-align:center;
     font-size:11px;
     color:var(--ink-soft);
-    padding: 10px 20px 40px;
+    padding: 8px 20px;
+    flex: 0 0 auto;
   }
 
   /* A partir de 821px (tablets, iPad y PC) el layout se mantiene igual: barra lateral fija al costado. */
@@ -503,17 +554,21 @@
       subj.topics.forEach(function(t){
         var chip = document.createElement('div');
         chip.className = 'topic-chip';
-        chip.draggable = true;
         chip.dataset.subjectId = subj.id;
         chip.dataset.topicId = t.id;
         chip.style.setProperty('--tag', subj.color);
+        var handle = document.createElement('span');
+        handle.className = 'grab-handle';
+        handle.textContent = '⠿';
         var span = document.createElement('span');
+        span.style.flex = '1';
         span.textContent = t.name;
         var del = document.createElement('button');
         del.textContent = '×';
         del.setAttribute('data-action','delete-topic');
         del.setAttribute('data-subject-id', subj.id);
         del.setAttribute('data-topic-id', t.id);
+        chip.appendChild(handle);
         chip.appendChild(span);
         chip.appendChild(del);
         list.appendChild(chip);
@@ -696,54 +751,107 @@
     }
   });
 
-  // drag and drop
-  document.addEventListener('dragstart', function(e){
-    var chip = e.target.closest('.topic-chip');
-    if(!chip) return;
+  // drag and drop — implementado con Pointer Events para que funcione igual
+  // con mouse (PC) y con el dedo (tablet/celular), donde el drag-and-drop
+  // nativo de HTML5 no es confiable.
+  var dragState = null; // { payload, ghostEl, currentDrop, pointerId, chip }
+
+  function buildPayloadFromChip(chip){
     var sid = chip.dataset.subjectId, tid = chip.dataset.topicId;
     var subj = findSubject(sid);
+    if(!subj) return null;
     var topic = subj.topics.find(function(t){ return t.id===tid; });
-    if(!topic) return;
-    var payload = { subjectId: sid, subjectName: subj.name, topicId: tid, topicName: topic.name, color: subj.color };
-    e.dataTransfer.setData('text/plain', JSON.stringify(payload));
-    e.dataTransfer.effectAllowed = 'copy';
-    chip.classList.add('dragging');
-  });
-  document.addEventListener('dragend', function(e){
+    if(!topic) return null;
+    return { subjectId: sid, subjectName: subj.name, topicId: tid, topicName: topic.name, color: subj.color };
+  }
+
+  function makeGhost(text, color){
+    var g = document.createElement('div');
+    g.className = 'drag-ghost';
+    g.style.borderLeft = '4px solid ' + color;
+    g.textContent = text;
+    document.body.appendChild(g);
+    return g;
+  }
+
+  function moveGhost(g, x, y){
+    g.style.left = x + 'px';
+    g.style.top = y + 'px';
+  }
+
+  function findDropAt(x, y){
+    var el = document.elementFromPoint(x, y);
+    return el ? el.closest('.day-drop') : null;
+  }
+
+  document.addEventListener('pointerdown', function(e){
+    if(e.pointerType === 'mouse' && e.button !== 0) return;
     var chip = e.target.closest('.topic-chip');
-    if(chip) chip.classList.remove('dragging');
+    if(!chip) return;
+    if(e.target.closest('button')) return; // no interferir con el botón de borrar
+    var payload = buildPayloadFromChip(chip);
+    if(!payload) return;
+
+    dragState = {
+      payload: payload,
+      chip: chip,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      started: false,
+      ghostEl: null,
+      currentDrop: null
+    };
+    chip.setPointerCapture(e.pointerId);
   });
-  document.addEventListener('dragover', function(e){
-    var drop = e.target.closest('.day-drop');
-    if(!drop) return;
+
+  document.addEventListener('pointermove', function(e){
+    if(!dragState || e.pointerId !== dragState.pointerId) return;
+    var dx = e.clientX - dragState.startX, dy = e.clientY - dragState.startY;
+
+    if(!dragState.started){
+      if(Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      dragState.started = true;
+      dragState.chip.classList.add('dragging');
+      dragState.ghostEl = makeGhost(dragState.payload.topicName, dragState.payload.color);
+    }
+
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-    drop.classList.add('drag-over');
+    moveGhost(dragState.ghostEl, e.clientX, e.clientY);
+
+    var drop = findDropAt(e.clientX, e.clientY);
+    if(drop !== dragState.currentDrop){
+      if(dragState.currentDrop) dragState.currentDrop.classList.remove('drag-over');
+      if(drop) drop.classList.add('drag-over');
+      dragState.currentDrop = drop;
+    }
   });
-  document.addEventListener('dragleave', function(e){
-    var drop = e.target.closest('.day-drop');
-    if(drop) drop.classList.remove('drag-over');
-  });
-  document.addEventListener('drop', function(e){
-    var drop = e.target.closest('.day-drop');
-    if(!drop) return;
-    e.preventDefault();
-    drop.classList.remove('drag-over');
-    var raw = e.dataTransfer.getData('text/plain');
-    if(!raw) return;
-    var payload;
-    try{ payload = JSON.parse(raw); }catch(err){ return; }
-    var date = drop.dataset.date;
-    if(!state.schedule[date]) state.schedule[date] = [];
-    state.schedule[date].push({
-      id: uid(),
-      subjectId: payload.subjectId,
-      subjectName: payload.subjectName,
-      topicName: payload.topicName,
-      color: payload.color
-    });
-    render();
-  });
+
+  function endDrag(e, commit){
+    if(!dragState || e.pointerId !== dragState.pointerId) return;
+    var ds = dragState;
+    dragState = null;
+
+    ds.chip.classList.remove('dragging');
+    if(ds.currentDrop) ds.currentDrop.classList.remove('drag-over');
+    if(ds.ghostEl && ds.ghostEl.parentNode) ds.ghostEl.parentNode.removeChild(ds.ghostEl);
+
+    if(commit && ds.started && ds.currentDrop){
+      var date = ds.currentDrop.dataset.date;
+      if(!state.schedule[date]) state.schedule[date] = [];
+      state.schedule[date].push({
+        id: uid(),
+        subjectId: ds.payload.subjectId,
+        subjectName: ds.payload.subjectName,
+        topicName: ds.payload.topicName,
+        color: ds.payload.color
+      });
+      render();
+    }
+  }
+
+  document.addEventListener('pointerup', function(e){ endDrag(e, true); });
+  document.addEventListener('pointercancel', function(e){ endDrag(e, false); });
 
   /* ---------------- PDF ---------------- */
 
