@@ -284,13 +284,62 @@
     padding: 10px 20px 40px;
   }
 
-  @media (max-width: 820px){
-    main.layout{ flex-direction:column; }
-    #sidebar{ width:100%; flex-basis:auto; position:static; }
+  /* A partir de 821px (tablets, iPad y PC) el layout se mantiene igual: barra lateral fija al costado. */
+
+  /* ---------- AVISO DE ROTACIÓN (solo celulares en vertical) ---------- */
+  .rotate-notice{ display:none; }
+
+  @media (max-width: 600px) and (orientation: portrait){
+    header.top, main.layout, footer{ display:none !important; }
+    .rotate-notice{
+      display:flex;
+      position:fixed;
+      inset:0;
+      z-index:9999;
+      background:var(--paper);
+      background-image: radial-gradient(circle at 1px 1px, rgba(35,40,31,0.05) 1px, transparent 0);
+      background-size: 22px 22px;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      gap:18px;
+      padding:32px;
+    }
+  }
+
+  .rotate-notice svg{
+    width:56px; height:56px;
+    animation: rotate-hint 1.8s ease-in-out infinite;
+  }
+  @keyframes rotate-hint{
+    0%, 100%{ transform:rotate(0deg); }
+    50%{ transform:rotate(-90deg); }
+  }
+  .rotate-notice h2{
+    font-size:16px;
+    margin:0;
+    text-transform:none;
+  }
+  .rotate-notice p{
+    font-size:13px;
+    color:var(--ink-soft);
+    max-width:280px;
+    margin:0;
+    line-height:1.5;
   }
 </style>
 </head>
 <body>
+
+<div class="rotate-notice">
+  <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="9" y="4" width="22" height="32" rx="4" stroke="#23281F" stroke-width="2.2"/>
+    <line x1="17" y1="30.5" x2="23" y2="30.5" stroke="#23281F" stroke-width="2.2" stroke-linecap="round"/>
+  </svg>
+  <h2 class="mono">girá tu celular</h2>
+  <p>Esta app está pensada para usarse en horizontal. Girá tu teléfono para ver el cronograma completo.</p>
+</div>
 
 <header class="top">
   <div class="top-row">
