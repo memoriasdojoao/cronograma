@@ -107,11 +107,11 @@
     transition:transform .12s ease, box-shadow .12s ease;
   }
   .btn:hover{ transform:translateY(-1px); box-shadow:var(--shadow); }
+  .btn-primary, .btn-danger{ margin-top:14px; }
   .btn-primary{
     background:var(--teal);
     border-color:var(--teal-dark);
     color:#fff;
-    margin-top:14px;
   }
   .btn-primary:hover{ background:var(--teal-dark); }
   .btn-ghost{
@@ -119,6 +119,12 @@
     border:1px dashed var(--line);
     color:var(--ink-soft);
   }
+  .btn-danger{
+    background:transparent;
+    border:1px solid var(--rust);
+    color:var(--rust);
+  }
+  .btn-danger:hover{ background:rgba(181,83,60,0.08); }
 
   /* ---------- LAYOUT ---------- */
   main.layout{
@@ -127,13 +133,28 @@
     gap:24px;
     padding: 20px clamp(16px,4vw,48px) 60px;
   }
-  #calendar-area{ flex:1 1 auto; min-width:0; }
+  #calendar-area{
+    flex:1 1 auto;
+    min-width:0;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+    padding-right:8px;
+  }
   #sidebar{
     width:300px;
     flex:0 0 300px;
     position:sticky;
     top:20px;
+    max-height: calc(100vh - 150px);
+    overflow-y:auto;
+    padding-right:6px;
   }
+  #calendar-area::-webkit-scrollbar, #sidebar::-webkit-scrollbar{ width:8px; }
+  #calendar-area::-webkit-scrollbar-track, #sidebar::-webkit-scrollbar-track{ background:transparent; }
+  #calendar-area::-webkit-scrollbar-thumb, #sidebar::-webkit-scrollbar-thumb{ background:var(--line); border-radius:6px; }
+  #calendar-area::-webkit-scrollbar-thumb:hover, #sidebar::-webkit-scrollbar-thumb:hover{ background:#b3b7a8; }
+  #calendar-area{ scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+  #sidebar{ scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
 
   /* ---------- CALENDAR ---------- */
   .cal-empty{
@@ -240,6 +261,8 @@
   }
   .placed-item .placed-subject{ font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); }
   .placed-item .placed-topic{ font-weight:600; line-height:1.25; padding-right:14px; }
+  .placed-item.highlighted{ border-left-width:6px; }
+  .placed-item.highlighted .placed-topic{ font-weight:800; }
   .placed-item button{
     position:absolute; top:4px; right:5px;
     background:none; border:none; color:#b7bcae; font-size:13px; line-height:1;
@@ -259,6 +282,7 @@
     box-shadow:var(--shadow);
     overflow:hidden;
   }
+  .subject.subject-highlighted{ box-shadow:0 0 0 2px rgba(201,154,46,0.4), var(--shadow); }
   .subject-head{
     display:flex;
     align-items:center;
@@ -271,6 +295,7 @@
     background:none; border:none; color:var(--ink-soft); font-size:14px; padding:3px 5px; border-radius:5px;
   }
   .icon-btn:hover{ background:var(--line-soft); color:var(--ink); }
+  .star-btn.active{ color:#C99A2E; }
   .collapse-btn{ font-size:11px; width:16px; }
   .topic-list{ padding: 0 10px 10px; display:flex; flex-direction:column; gap:6px; }
   .topic-list.collapsed{ display:none; }
@@ -365,13 +390,15 @@
   /* janela estreita com mouse/trackpad (ex: notebook com a janela reduzida) */
   @media (max-width: 820px) and (pointer: fine){
     main.layout{ flex-direction:column; }
-    #sidebar{ width:100%; flex-basis:auto; position:static; }
+    #sidebar{ width:100%; flex-basis:auto; position:static; max-height:none; overflow:visible; }
+    #calendar-area{ max-height:none; overflow:visible; }
   }
   /* telas realmente estreitas (celular) — tablets/iPad ficam de fora disso
      e mantêm a barra lateral ao lado, igual ao notebook */
   @media (max-width: 600px){
     main.layout{ flex-direction:column; }
-    #sidebar{ width:100%; flex-basis:auto; position:static; }
+    #sidebar{ width:100%; flex-basis:auto; position:static; max-height:none; overflow:visible; }
+    #calendar-area{ max-height:none; overflow:visible; }
   }
 </style>
 </head>
@@ -408,6 +435,7 @@
         <input type="date" id="range-end">
       </div>
       <button class="btn btn-primary" id="btn-pdf">Generar cronograma (PDF)</button>
+      <button class="btn btn-danger" id="btn-clear">Limpiar</button>
     </div>
   </div>
 </header>
@@ -473,7 +501,8 @@
       rangeStart: isoDate(new Date()),
       rangeEnd: isoDate(addDays(new Date(), 13)),
       schedule: {},
-      collapsed: {}
+      collapsed: {},
+      highlightedSubjectId: null
     };
     return s;
   }
@@ -496,6 +525,7 @@
       if(!raw) return defaultState();
       var parsed = JSON.parse(raw);
       if(!parsed.subjects) return defaultState();
+      if(parsed.highlightedSubjectId === undefined) parsed.highlightedSubjectId = null;
       return parsed;
     }catch(e){ return defaultState(); }
   }
@@ -538,7 +568,8 @@
     wrap.innerHTML = '';
     state.subjects.forEach(function(subj){
       var box = document.createElement('div');
-      box.className = 'subject';
+      var isHighlighted = state.highlightedSubjectId === subj.id;
+      box.className = 'subject' + (isHighlighted ? ' subject-highlighted' : '');
       box.style.setProperty('--tag', subj.color);
 
       var head = document.createElement('div');
@@ -548,6 +579,7 @@
         '<button class="icon-btn collapse-btn" data-action="toggle-subject" data-id="'+subj.id+'">'+(collapsed?'▸':'▾')+'</button>'+
         '<span class="dot"></span>'+
         '<span class="subject-name"></span>'+
+        '<button class="icon-btn star-btn'+(isHighlighted?' active':'')+'" data-action="toggle-highlight" data-id="'+subj.id+'" title="'+(isHighlighted?'Quitar destaque':'Destacar en el PDF')+'">'+(isHighlighted?'★':'☆')+'</button>'+
         '<button class="icon-btn" data-action="add-topic-form" data-id="'+subj.id+'" title="Agregar tema">+</button>'+
         '<button class="icon-btn" data-action="delete-subject" data-id="'+subj.id+'" title="Eliminar materia">🗑</button>';
       head.querySelector('.subject-name').textContent = subj.name;
@@ -667,14 +699,16 @@
         drop.appendChild(ph);
       } else {
         items.forEach(function(it){
+          var isHi = it.subjectId === state.highlightedSubjectId;
           var pi = document.createElement('div');
-          pi.className = 'placed-item';
+          pi.className = 'placed-item' + (isHi ? ' highlighted' : '');
           pi.style.setProperty('--tag', it.color);
+          if(isHi){ pi.style.background = tintCss(it.color, 0.14); }
           pi.innerHTML =
             '<span class="placed-subject"></span>'+
             '<span class="placed-topic"></span>'+
             '<button data-action="remove-item" data-date="'+iso+'" data-item-id="'+it.id+'">×</button>';
-          pi.querySelector('.placed-subject').textContent = it.subjectName;
+          pi.querySelector('.placed-subject').textContent = (isHi ? '★ ' : '') + it.subjectName;
           pi.querySelector('.placed-topic').textContent = it.topicName;
           drop.appendChild(pi);
         });
@@ -694,6 +728,25 @@
   });
   document.getElementById('range-end').addEventListener('change', function(e){
     state.rangeEnd = e.target.value; render();
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', function(){
+    if(!confirm('¿Vaciar todo el cronograma y reiniciar la fecha de inicio a hoy?')) return;
+    var oldStart = state.rangeStart ? parseISO(state.rangeStart) : null;
+    var oldEnd = state.rangeEnd ? parseISO(state.rangeEnd) : null;
+    var span = 13;
+    if(oldStart && oldEnd){
+      var diff = Math.round((oldEnd - oldStart) / 86400000);
+      if(diff >= 0) span = diff;
+    }
+    var today = new Date();
+    state.schedule = {};
+    state.rangeStart = isoDate(today);
+    state.rangeEnd = isoDate(addDays(today, span));
+    selectedTopic = null;
+    document.getElementById('range-start').value = state.rangeStart;
+    document.getElementById('range-end').value = state.rangeEnd;
+    render();
   });
 
   document.getElementById('btn-show-new-subject').addEventListener('click', function(){
@@ -730,6 +783,7 @@
         var id = btn.dataset.id;
         if(confirm('¿Eliminar esta materia y todos sus temas?')){
           if(selectedTopic && selectedTopic.subjectId===id) selectedTopic = null;
+          if(state.highlightedSubjectId === id) state.highlightedSubjectId = null;
           state.subjects = state.subjects.filter(function(s){ return s.id!==id; });
           render();
         }
@@ -765,6 +819,11 @@
       }
       else if(action === 'cancel-selection'){
         selectedTopic = null;
+        render();
+      }
+      else if(action === 'toggle-highlight'){
+        var hid = btn.dataset.id;
+        state.highlightedSubjectId = (state.highlightedSubjectId === hid) ? null : hid;
         render();
       }
       return;
@@ -854,11 +913,17 @@
     return [parseInt(v.substring(0,2),16), parseInt(v.substring(2,4),16), parseInt(v.substring(4,6),16)];
   }
 
-  function fitText(doc, text, maxWidth){
-    if(doc.getTextWidth(text) <= maxWidth) return text;
-    var t = text;
-    while(t.length > 1 && doc.getTextWidth(t + '…') > maxWidth){ t = t.slice(0,-1); }
-    return t + '…';
+  function tintRgb(rgb, alpha){
+    return [
+      Math.round(rgb[0]*alpha + 255*(1-alpha)),
+      Math.round(rgb[1]*alpha + 255*(1-alpha)),
+      Math.round(rgb[2]*alpha + 255*(1-alpha))
+    ];
+  }
+
+  function tintCss(hex, alpha){
+    var rgb = tintRgb(hexToRgb(hex), alpha);
+    return 'rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';
   }
 
   // builds an array of weeks (Sun..Sat), each a list of {date|null} covering the full range,
@@ -896,14 +961,58 @@
 
     var colGap = 6;
     var colW = (pageW - margin*2 - colGap*6) / 7;
-    var rowH = 132;
     var headerH = 16;
-    var maxItemsShown = 4;
-    var chipH = 21;
-    var chipGap = 3;
+
+    // texto de cada item se envuelve en varias líneas (sin recortar con "…"),
+    // así que la altura de cada tarjeta y de cada fila se calcula según el contenido.
+    var chipPadTop = 5, chipPadBottom = 5, chipGap = 4;
+    var subjFontSize = 5.8, subjLineH = 6.2;
+    var topicFontSizeN = 7.6, topicLineHN = 8.7;
+    var topicFontSizeHi = 8.3, topicLineHHi = 9.6;
+    var subjColor = [140,145,133];
+    var topicColor = [35,40,31];
+
+    function buildItemLines(item, maxW){
+      var isHi = item.subjectId === state.highlightedSubjectId;
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(subjFontSize);
+      var subjTexts = doc.splitTextToSize(item.subjectName.toUpperCase(), maxW);
+
+      var topicSize = isHi ? topicFontSizeHi : topicFontSizeN;
+      var topicLH = isHi ? topicLineHHi : topicLineHN;
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(topicSize);
+      var topicTexts = doc.splitTextToSize(item.topicName, maxW);
+
+      var lines = [];
+      subjTexts.forEach(function(t){ lines.push({text:t, font:'normal', size:subjFontSize, color:subjColor, lh:subjLineH}); });
+      topicTexts.forEach(function(t){ lines.push({text:t, font:'bold', size:topicSize, color:topicColor, lh:topicLH}); });
+
+      var height = chipPadTop + lines.reduce(function(s,l){ return s+l.lh; }, 0) + chipPadBottom;
+      return { isHi:isHi, lines:lines, height:height };
+    }
+
+    function dayItemsTotalHeight(items, maxW){
+      var total = 0;
+      items.forEach(function(it){ total += buildItemLines(it, maxW).height + chipGap; });
+      return total;
+    }
+
+    function computeRowHeight(week){
+      var chipW = colW - 8;
+      var textMaxW = chipW - 12;
+      var maxTotal = 0;
+      week.forEach(function(d){
+        if(!d) return;
+        var items = state.schedule[isoDate(d)] || [];
+        var total = dayItemsTotalHeight(items, textMaxW);
+        if(total > maxTotal) maxTotal = total;
+      });
+      var minRowH = 70;
+      return Math.max(minRowH, headerH + 8 + maxTotal + 8);
+    }
 
     var weeks = buildWeeks(start, end);
-    var weekIdx = 0;
 
     function drawTitleBlock(){
       var y = margin + 4;
@@ -922,12 +1031,15 @@
       doc.setFontSize(8.5);
       var lx = margin;
       state.subjects.forEach(function(s){
+        var isHi = s.id === state.highlightedSubjectId;
+        var label = s.name + (isHi ? ' (destacada)' : '');
         var rgb = hexToRgb(s.color);
-        var w = doc.getTextWidth(s.name) + 16;
+        doc.setFont('helvetica', isHi ? 'bold' : 'normal');
+        var w = doc.getTextWidth(label) + 16;
         doc.setFillColor(rgb[0], rgb[1], rgb[2]);
         doc.roundedRect(lx, y-7, 7, 7, 2, 2, 'F');
         doc.setTextColor(35,40,31);
-        doc.text(s.name, lx + 11, y);
+        doc.text(label, lx + 11, y);
         lx += w + 8;
       });
       y += 12;
@@ -946,7 +1058,7 @@
       return y + 8;
     }
 
-    function drawWeekRow(week, y){
+    function drawWeekRow(week, y, rowH){
       for(var i=0;i<7;i++){
         var x = margin + i*(colW+colGap);
         var d = week[i];
@@ -976,63 +1088,60 @@
         doc.line(x+4, y+headerH+3, x+colW-4, y+headerH+3);
         doc.setLineDashPattern([], 0);
 
-        // items
+        // items (texto completo, sin recortar — cada tarjeta crece según haga falta)
         var iso = isoDate(d);
         var items = state.schedule[iso] || [];
         var iy = y + headerH + 8;
-        var shown = items.slice(0, maxItemsShown);
         var chipX = x + 4;
         var chipW = colW - 8;
-        shown.forEach(function(it){
+        var textMaxW = chipW - 12;
+
+        items.forEach(function(it){
+          var info = buildItemLines(it, textMaxW);
           var rgb = hexToRgb(it.color);
 
-          // card background + border
-          doc.setFillColor(255,255,255);
-          doc.roundedRect(chipX, iy, chipW, chipH, 2.5, 2.5, 'F');
-          doc.setDrawColor(216,219,209);
-          doc.setLineWidth(0.5);
-          doc.roundedRect(chipX, iy, chipW, chipH, 2.5, 2.5, 'S');
+          if(info.isHi){
+            var tint = tintRgb(rgb, 0.22);
+            doc.setFillColor(tint[0], tint[1], tint[2]);
+          } else {
+            doc.setFillColor(255,255,255);
+          }
+          doc.roundedRect(chipX, iy, chipW, info.height, 2.5, 2.5, 'F');
+
+          if(info.isHi){ doc.setDrawColor(rgb[0], rgb[1], rgb[2]); doc.setLineWidth(1); }
+          else { doc.setDrawColor(216,219,209); doc.setLineWidth(0.5); }
+          doc.roundedRect(chipX, iy, chipW, info.height, 2.5, 2.5, 'S');
 
           // colored left bar
           doc.setFillColor(rgb[0], rgb[1], rgb[2]);
-          doc.rect(chipX + 0.3, iy + 0.3, 3, chipH - 0.6, 'F');
+          doc.rect(chipX + 0.3, iy + 0.3, info.isHi ? 4 : 3, info.height - 0.6, 'F');
 
-          var textX = chipX + 8;
-          var textMaxW = chipW - 12;
+          var textX = chipX + (info.isHi ? 9 : 8);
+          var cursor = iy + chipPadTop;
+          info.lines.forEach(function(line){
+            cursor += line.lh;
+            doc.setFont('helvetica', line.font);
+            doc.setFontSize(line.size);
+            doc.setTextColor(line.color[0], line.color[1], line.color[2]);
+            doc.text(line.text, textX, cursor - line.lh*0.28);
+          });
 
-          // subject name (top, small, gray, uppercase)
-          doc.setFont('helvetica','normal');
-          doc.setFontSize(5.8);
-          doc.setTextColor(140,145,133);
-          doc.text(fitText(doc, it.subjectName.toUpperCase(), textMaxW), textX, iy + 8);
-
-          // topic name (bottom, bold)
-          doc.setFont('helvetica','bold');
-          doc.setFontSize(7.6);
-          doc.setTextColor(35,40,31);
-          doc.text(fitText(doc, it.topicName, textMaxW), textX, iy + 17);
-
-          iy += chipH + chipGap;
+          iy += info.height + chipGap;
         });
-        if(items.length > maxItemsShown){
-          doc.setFont('helvetica','italic');
-          doc.setFontSize(7.2);
-          doc.setTextColor(120,126,112);
-          doc.text('+' + (items.length - maxItemsShown) + ' más', x + 6, iy + 6);
-        }
       }
     }
 
     var y = drawTitleBlock();
     y = drawWeekdayHeader(y);
 
-    weeks.forEach(function(week, idx){
+    weeks.forEach(function(week){
+      var rowH = computeRowHeight(week);
       if(y + rowH > pageH - margin){
         doc.addPage();
         y = margin + 6;
         y = drawWeekdayHeader(y);
       }
-      drawWeekRow(week, y);
+      drawWeekRow(week, y, rowH);
       y += rowH + 8;
     });
 
