@@ -508,6 +508,28 @@
   .rf-top button:last-child{justify-self:end}
   @media (pointer:fine){.controls .btn{height:36px;padding-top:0;padding-bottom:0}.field input[type=date]{height:36px}}
   @media (pointer:coarse){.subject-head .icon-btn:not(.collapse-btn){width:38px;height:38px}}
+
+  /* ---------- FAJA MAS FINA + AJUSTES ---------- */
+  header.top{padding:8px clamp(16px,4vw,48px)}
+  .brand{gap:10px}
+  .brand svg{width:28px;height:28px}
+  .brand h1{font-size:18px;line-height:1.1}
+  .brand .sub{font-size:10.5px;margin-top:1px}
+  .controls{background:none;border:0;padding:0;gap:8px}
+  .field{flex-direction:row;align-items:center;gap:6px}
+  .field label{font-size:11px}
+  .arrow-sep{margin-top:0}
+  .controls .btn,.controls #btn-raffle{margin-top:0!important}
+  @media (pointer:fine){.controls .btn{height:32px}.field input[type=date]{height:32px;padding:0 8px}}
+  @media (pointer:coarse){.controls .btn{padding:9px 14px}.field input[type=date]{padding:7px 10px}}
+  .rf-top{padding:8px clamp(16px,4vw,48px)}
+  .rf-top h2{font-size:clamp(16px,2vw,20px)}
+  .rf-top button{white-space:nowrap}
+  main.layout{padding-bottom:24px}
+  footer{padding:8px 20px 14px}
+  .topic-chip span,.placed-topic,.placed-subject,.subject-name{overflow-wrap:anywhere;min-width:0}
+  #rf-canvas{max-width:none}
+  @media (max-width:560px){.rf-top{grid-template-columns:1fr 1fr}.rf-top h2{grid-column:1/-1;grid-row:2;text-align:center}}
 </style>
 </head>
 <body>
